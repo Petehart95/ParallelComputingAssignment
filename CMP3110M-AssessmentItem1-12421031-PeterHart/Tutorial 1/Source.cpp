@@ -1,14 +1,16 @@
-/*CMP3110M Parallel Computing Assignment | HAR12421031 Peter Hart*/
+/*CMP3110M Parallel Computing Assignment | 12421031 Peter Hart*/
 
 #define CL_USE_DEPRECATED_OPENCL_1_2_APIS
 #define __CL_ENABLE_EXCEPTIONS
 
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <CL/cl.hpp>
 #include "Utils.h"
+#include <string>
 
-//using namespace std;
+using namespace std;
 
 void print_help();
 
@@ -16,6 +18,46 @@ int main(int argc, char **argv)
 {
 	int platform_id = 0;
 	int device_id = 0;
+	ifstream weather_data;
+	string line;
+	weather_data.open("temp_lincolnshire_short.txt");
+	string stationName;
+	int year, month, day, time;
+	float airTemp;
+
+
+	vector<string> stationNameVector = {};
+
+	vector<int> yearVector = {};
+	vector<int> monthVector = {};
+	vector<int> dayVector = {};
+	vector<int> timeVector = {};
+
+	vector<float> airTempVector = {};
+
+	/*Check if the file exists*/
+	if (weather_data.fail())
+	{
+		cout << "Cannot load file..." << endl;
+		getchar();
+		return 1;
+	}
+
+
+	/*If the file exists, load the data into individual vectors*/
+	while (!weather_data.eof())
+	{
+		/*Store the value stored */
+		weather_data >> stationName >> year >> month >> day >> time >> airTemp;
+
+		stationNameVector.push_back(stationName);
+		yearVector.push_back(year);
+		monthVector.push_back(month);
+		dayVector.push_back(day);
+		timeVector.push_back(time);
+		airTempVector.push_back(airTemp);
+	}
+
 
 	//User-Interface for the device Selection
 	for (int i = 1; i < argc; i++)	
@@ -120,6 +162,10 @@ void print_help() {
 	std::cerr << "  -d : select device" << std::endl;
 	std::cerr << "  -l : list all platforms and devices" << std::endl;
 	std::cerr << "  -h : print this message" << std::endl;
+}
+
+int serial_average(float* A) {
+	//*10 to allow atomic, /10 to return decimal
 }
 
 /*end of script*/
