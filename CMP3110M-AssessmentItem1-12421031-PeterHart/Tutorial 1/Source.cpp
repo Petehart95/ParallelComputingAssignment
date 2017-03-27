@@ -1,4 +1,4 @@
-/*CMP3110M Parallel Computing Assignment | 12421031 Peter Hart*/
+/* Source.cpp | CMP3110M Parallel Computing Assignment | 12421031 Peter Hart */
 
 #define CL_USE_DEPRECATED_OPENCL_1_2_APIS
 #define __CL_ENABLE_EXCEPTIONS
@@ -6,15 +6,14 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <string>
+#include <cmath>
 #include <CL/cl.hpp>
 #include "Utils.h"
-#include <string>
 
 using namespace std;
 
-
 void print_help();
-int serial_average(float*);
 
 int main(int argc, char **argv)
 {
@@ -35,7 +34,7 @@ int main(int argc, char **argv)
 	vector<int> dayVector = {};
 	vector<int> timeVector = {};
 
-	vector<float> airTempVector = {};
+	vector<double> A = {};
 
 	// Check if the file exists
 	if (weather_data.fail())
@@ -57,7 +56,7 @@ int main(int argc, char **argv)
 		monthVector.push_back(month);
 		dayVector.push_back(day);
 		timeVector.push_back(time);
-		airTempVector.push_back(airTemp);
+		A.push_back(airTemp);
 	}
 
 
@@ -100,32 +99,37 @@ int main(int argc, char **argv)
 		}
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-		vector<int> A = { 9, 8, 7, 6, 5, 4, 3, 2, 1 };
-		cout << "Before: A = " << A << endl;
+		//vector<double> A = { 9, 6, -10, 4, 3, 2, 1, 15, 1, -2, 4, 2, 4, 1, 9, 8, -1, 6, -10};
 
-		size_t local_size = 16;
+		size_t local_size = 4;
 		size_t padding_size = A.size() % local_size;
 
 		// If the input vector is not a multiple of the local_size:
 		// Insert additional neutral elements (0 for addition) so that the total will not be affected
-		if (padding_size) {
-			//create an extra vector with neutral values
-			std::vector<int> A_ext(local_size - padding_size, 0);
-			//append that extra vector to our input (apply padding to the original vector)
-			A.insert(A.end(), A_ext.begin(), A_ext.end());
-		}
+		//if (padding_size) {
+		//	//create an extra vector with neutral values
+		//	std::vector<int> A_ext(local_size - padding_size, 0);
+		//	//append that extra vector to our input (apply padding to the original vector)
+		//	A.insert(A.end(), A_ext.begin(), A_ext.end());
+		//}
 
 		size_t vector_elements = A.size();//number of elements
-		size_t vector_size = A.size()*sizeof(int);//size in bytes
+		size_t vector_size = A.size()*sizeof(double);//size in bytes
+		size_t output_size = A.size()*sizeof(double);//size in bytes
 
-		// Host - output
-		std::vector<int> C(vector_elements);
+		size_t nr_groups = vector_elements / local_size;
+
+
+		//cout << "Before: " << A << endl;
+		//cout << "Workgroup Count: " << nr_groups << endl;
 
 		// Device - buffers
 		cl::Buffer buffer_A(context, CL_MEM_READ_WRITE, vector_size);
+		cl::Buffer buffer_B(context, CL_MEM_READ_WRITE, output_size);
 
 		// Copy array A to device memory
 		queue.enqueueWriteBuffer(buffer_A, CL_TRUE, 0, vector_size, &A[0]);
+		//queue.enqueueFillBuffer(buffer_B, 0, 0, output_size);//zero B buffer on device memory
 
 		int minTemp = 0;
 		int maxTemp = 0;
@@ -134,12 +138,11 @@ int main(int argc, char **argv)
 		int medTemp = 0;
 
 		// Setup and execute the kernel (i.e. device code)
-		cl::Kernel kernel_min = cl::Kernel(program, "get_min");
+		cl::Kernel kernel_min = cl::Kernel(program, "add");
 
 		kernel_min.setArg(0, buffer_A);
-		kernel_min.setArg(1, minTemp);
-
-		//kernel_1.setArg(2, cl::Local(local_size*sizeof(mytype)));//local memory size
+		kernel_min.setArg(1, buffer_A);
+		kernel_min.setArg(2, cl::Local(local_size*sizeof(double)));//local memory size
 
 		queue.enqueueNDRangeKernel(kernel_min, cl::NullRange, cl::NDRange(vector_elements), cl::NullRange);
 
@@ -148,12 +151,7 @@ int main(int argc, char **argv)
 
 		// Padding applied to ensure sorting algorithm can be applied to values near the boundaries of the vector
 		// Remove padding neutral values from original vector to restore vector to original size
-		for (int i = (local_size - padding_size); i > 0; i--)
-		{
-			A.erase(A.begin());
-		}
-
-		cout << "After: A = " << A << endl;
+		cout << "After: " << A << endl;
 		cout << "Maximum Temperature = " << maxTemp << endl;
 		cout << "Minimum Temperature = " << minTemp << endl;
 		cout << "Average Temperature = " << avgTemp << endl;
@@ -175,13 +173,6 @@ void print_help() {
 	std::cerr << "  -d : select device" << std::endl;
 	std::cerr << "  -l : list all platforms and devices" << std::endl;
 	std::cerr << "  -h : print this message" << std::endl;
-}
-
-int serial_average(float* A) {
-	//*10 to allow atomic, /10 to return decimal
-
-
-	return 0;
 }
 
 /*end of script*/
