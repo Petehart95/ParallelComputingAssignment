@@ -115,7 +115,7 @@ int main(int argc, char **argv)
 		//the following part adjusts the length of the input vector so it can be run for a specific workgroup size
 		//if the total input length is divisible by the workgroup size
 		//this makes the code more efficient
-		size_t local_size = 8;
+		size_t local_size = 32;
 
 		size_t padding_size = A.size() % local_size;
 
@@ -144,9 +144,9 @@ int main(int argc, char **argv)
 		}
 
 		//host - output
-		size_t output_size = B.size() * sizeof(mytype);//size in bytes
+		size_t output_size = B.size() * sizeof(mytype); //size in bytes
 
-													   //device - buffers
+		//device - buffers
 		cl::Buffer buffer_A(context, CL_MEM_READ_ONLY, input_size);
 		cl::Buffer buffer_B(context, CL_MEM_READ_WRITE, output_size);
 
@@ -156,12 +156,14 @@ int main(int argc, char **argv)
 		queue.enqueueWriteBuffer(buffer_A, CL_TRUE, 0, input_size, &A[0]);
 		queue.enqueueFillBuffer(buffer_B, 0, 0, output_size);//zero B buffer on device memory
 
-		//Setup and execute all kernels (i.e. device code)
-		cl::Kernel kernel_1 = cl::Kernel(program, "reduce_add");
+		cl::Kernel kernel_1 = cl::Kernel(program, "reduce_standard_deviation");
 		kernel_1.setArg(0, buffer_A);
 		kernel_1.setArg(1, buffer_B);
-		kernel_1.setArg(2, cl::Local(local_size*sizeof(mytype)));//local memory size
+		kernel_1.setArg(2, cl::Local(local_size * sizeof(mytype))); //local memory size
 
+
+		//mean,variance,squareroot
+		//variance = difference squared, then averaged
 		//call all kernels in a sequence
 		queue.enqueueNDRangeKernel(kernel_1, cl::NullRange, cl::NDRange(input_elements), cl::NDRange(local_size));
 
@@ -169,10 +171,10 @@ int main(int argc, char **argv)
 		queue.enqueueReadBuffer(buffer_B, CL_TRUE, 0, output_size, &B[0]);
 
 		int temp = B.at(0);
-		double average = temp / input_elements;
-
+		int mean = temp / input_elements;
+		int std = sqrt(mean);
 		//std::cout << "A = " << A << std::endl;
-		std::cout << "Average =  " << average << std::endl;
+		std::cout << std << std::endl;
 
 	}
 	catch (cl::Error err) {
