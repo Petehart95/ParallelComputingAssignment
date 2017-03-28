@@ -14,29 +14,34 @@
 using namespace std;
 
 void print_help();
+int getAvgTemp(cl::Program, cl::Buffer, cl::Buffer, cl::CommandQueue, size_t, size_t, vector<int>, size_t);
+float serial_getAvgTemp(vector<float>, size_t);
 
 int main(int argc, char **argv)
 {
 	int platform_id = 0;
 	int device_id = 0;
+
+	////////////////////////////////////////////////////////////////////////////////////////////////////
+	///////////////////////////////////// READ DATA FROM TEXT FILE /////////////////////////////////////
+	////////////////////////////////////////////////////////////////////////////////////////////////////
+
 	ifstream weather_data;
-	string line;
 	weather_data.open("temp_lincolnshire_short.txt");
-	string stationName;
+	string stationName, line;
 	int year, month, day, time;
 	float airTemp;
+	typedef int mytype;
 
-
+	// Initialise vectors which will be used for storing each respective column of data from the text file
 	vector<string> stationNameVector = {};
-
 	vector<int> yearVector = {};
 	vector<int> monthVector = {};
 	vector<int> dayVector = {};
 	vector<int> timeVector = {};
+	vector<mytype> A = {};
 
-	vector<double> A = {};
-
-	// Check if the file exists
+	// Check if the file exists, if it doesn't, terminate the program
 	if (weather_data.fail())
 	{
 		cout << "Cannot load file..." << endl;
@@ -44,13 +49,13 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-
-	// If the file exists, load the data into individual vectors
+	// If the file exists, load the data into each of the respective vectors
 	while (!weather_data.eof())
 	{
-		// Store the value stored
+		// Temporarily store the data into different variables
 		weather_data >> stationName >> year >> month >> day >> time >> airTemp;
 
+		// Add the data contained in each variable to each vector
 		stationNameVector.push_back(stationName);
 		yearVector.push_back(year);
 		monthVector.push_back(month);
@@ -59,10 +64,10 @@ int main(int argc, char **argv)
 		A.push_back(airTemp);
 	}
 
-
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////
 	////////////////////////////////// User Interface for Device Selection //////////////////////////////////
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 	for (int i = 1; i < argc; i++)	
 	{
 		if ((strcmp(argv[i], "-p") == 0) && (i < (argc - 1))) { platform_id = atoi(argv[++i]); }
@@ -97,66 +102,78 @@ int main(int argc, char **argv)
 			cout << "Build Log:\t " << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(context.getInfo<CL_CONTEXT_DEVICES>()[0]) << endl;
 			throw err;
 		}
+
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////
+	///////////////////////////////////////////// Output Results ////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////
+	
 
-		//vector<double> A = { 9, 6, -10, 4, 3, 2, 1, 15, 1, -2, 4, 2, 4, 1, 9, 8, -1, 6, -10};
+		// Temporary custom vector for initial development of the kernels
+		vector<mytype> A = { 9, 6, -10, 4, 3, 2, 1, 15, 1, -2, 4, 2, 4, 1, 9, 8, -1, 6, -10 };
+		vector<mytype> B = { 9, 6, -10, 4, 3, 2, 1, 15, 1, -2, 4, 2, 4, 1, 9, 8, -1, 6, -10 };
 
-		size_t local_size = 4;
+		//the following part adjusts the length of the input vector so it can be run for a specific workgroup size
+		//if the total input length is divisible by the workgroup size
+		//this makes the code more efficient
+		size_t local_size = 8;
+
 		size_t padding_size = A.size() % local_size;
+
+		//if the input vector is not a multiple of the local_size
+		//insert additional neutral elements (0 for addition) so that the total will not be affected
+		if (padding_size) {
+			//create an extra vector with neutral values
+			std::vector<int> A_ext(local_size - padding_size, 0);
+			//append that extra vector to our input
+			A.insert(A.end(), A_ext.begin(), A_ext.end());
+		}
+		size_t input_elements = A.size();//number of input elements
+		size_t input_size = A.size() * sizeof(mytype);//size in bytes
+		size_t nr_groups = input_elements / local_size;
+
+		vector<int> outputList(input_elements);
 
 		// If the input vector is not a multiple of the local_size:
 		// Insert additional neutral elements (0 for addition) so that the total will not be affected
-		//if (padding_size) {
-		//	//create an extra vector with neutral values
-		//	std::vector<int> A_ext(local_size - padding_size, 0);
-		//	//append that extra vector to our input (apply padding to the original vector)
-		//	A.insert(A.end(), A_ext.begin(), A_ext.end());
-		//}
+		if (padding_size) 
+		{
+			//create an extra vector with neutral values
+			vector<int> B_ext(local_size - padding_size, 0);
+			//append that extra vector to our input (apply padding to the original vector)
+			B.insert(B.end(), B_ext.begin(), B_ext.end());
+		}
 
-		size_t vector_elements = A.size();//number of elements
-		size_t vector_size = A.size()*sizeof(double);//size in bytes
-		size_t output_size = A.size()*sizeof(double);//size in bytes
+		//host - output
+		size_t output_size = B.size() * sizeof(mytype);//size in bytes
 
-		size_t nr_groups = vector_elements / local_size;
-
-
-		//cout << "Before: " << A << endl;
-		//cout << "Workgroup Count: " << nr_groups << endl;
-
-		// Device - buffers
-		cl::Buffer buffer_A(context, CL_MEM_READ_WRITE, vector_size);
+													   //device - buffers
+		cl::Buffer buffer_A(context, CL_MEM_READ_ONLY, input_size);
 		cl::Buffer buffer_B(context, CL_MEM_READ_WRITE, output_size);
 
-		// Copy array A to device memory
-		queue.enqueueWriteBuffer(buffer_A, CL_TRUE, 0, vector_size, &A[0]);
-		//queue.enqueueFillBuffer(buffer_B, 0, 0, output_size);//zero B buffer on device memory
+		//Part 5 - device operations
 
-		int minTemp = 0;
-		int maxTemp = 0;
-		int avgTemp = 0;
-		int stdDevTemp = 0;
-		int medTemp = 0;
+		//Copy array A to and initialise other arrays on device memory
+		queue.enqueueWriteBuffer(buffer_A, CL_TRUE, 0, input_size, &A[0]);
+		queue.enqueueFillBuffer(buffer_B, 0, 0, output_size);//zero B buffer on device memory
 
-		// Setup and execute the kernel (i.e. device code)
-		cl::Kernel kernel_min = cl::Kernel(program, "add");
+		//Setup and execute all kernels (i.e. device code)
+		cl::Kernel kernel_1 = cl::Kernel(program, "reduce_add");
+		kernel_1.setArg(0, buffer_A);
+		kernel_1.setArg(1, buffer_B);
+		kernel_1.setArg(2, cl::Local(local_size*sizeof(mytype)));//local memory size
 
-		kernel_min.setArg(0, buffer_A);
-		kernel_min.setArg(1, buffer_A);
-		kernel_min.setArg(2, cl::Local(local_size*sizeof(double)));//local memory size
+		//call all kernels in a sequence
+		queue.enqueueNDRangeKernel(kernel_1, cl::NullRange, cl::NDRange(input_elements), cl::NDRange(local_size));
 
-		queue.enqueueNDRangeKernel(kernel_min, cl::NullRange, cl::NDRange(vector_elements), cl::NullRange);
+		//Copy the result from device to host
+		queue.enqueueReadBuffer(buffer_B, CL_TRUE, 0, output_size, &B[0]);
 
-		// Copy the result from device to host
-		queue.enqueueReadBuffer(buffer_A, CL_TRUE, 0, vector_size, &A[0]);
+		int temp = B.at(0);
+		double average = temp / input_elements;
 
-		// Padding applied to ensure sorting algorithm can be applied to values near the boundaries of the vector
-		// Remove padding neutral values from original vector to restore vector to original size
-		cout << "After: " << A << endl;
-		cout << "Maximum Temperature = " << maxTemp << endl;
-		cout << "Minimum Temperature = " << minTemp << endl;
-		cout << "Average Temperature = " << avgTemp << endl;
-		cout << "Standard Deviation = " << stdDevTemp << endl;
-		cout << "Median Temperature = " << medTemp << endl;
+		std::cout << "A = " << A << std::endl;
+		std::cout << "B = " << average << std::endl;
+
 	}
 	catch (cl::Error err) {
 		std::cerr << "ERROR: " << err.what() << ", " << getErrorString(err.err()) << std::endl;
@@ -174,5 +191,6 @@ void print_help() {
 	std::cerr << "  -l : list all platforms and devices" << std::endl;
 	std::cerr << "  -h : print this message" << std::endl;
 }
+
 
 /*end of script*/
