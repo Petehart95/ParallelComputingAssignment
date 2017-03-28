@@ -171,8 +171,8 @@ int main(int argc, char **argv)
 		int temp = B.at(0);
 		double average = temp / input_elements;
 
-		std::cout << "A = " << A << std::endl;
-		std::cout << "B = " << average << std::endl;
+		//std::cout << "A = " << A << std::endl;
+		std::cout << "Average =  " << average << std::endl;
 
 	}
 	catch (cl::Error err) {
