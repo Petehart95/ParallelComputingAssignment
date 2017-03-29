@@ -10,12 +10,13 @@
 #include <cmath>
 #include <CL/cl.hpp>
 #include "Utils.h"
+#include <algorithm>
 
 using namespace std;
 
 void print_help();
-int getAvgTemp(cl::Program, cl::Buffer, cl::Buffer, cl::CommandQueue, size_t, size_t, vector<int>, size_t);
-float serial_getAvgTemp(vector<float>, size_t);
+vector<float> quickDelete(vector<float>, float );
+
 
 int main(int argc, char **argv)
 {
@@ -27,11 +28,10 @@ int main(int argc, char **argv)
 	////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	ifstream weather_data;
-	weather_data.open("temp_lincolnshire_short.txt");
+	weather_data.open("temp_lincolnshire.txt");
 	string stationName, line;
 	int year, month, day, time;
 	float airTemp;
-	typedef int mytype;
 
 	// Initialise vectors which will be used for storing each respective column of data from the text file
 	vector<string> stationNameVector = {};
@@ -39,7 +39,7 @@ int main(int argc, char **argv)
 	vector<int> monthVector = {};
 	vector<int> dayVector = {};
 	vector<int> timeVector = {};
-	vector<mytype> A = {};
+	vector<float> A = {};
 
 	// Check if the file exists, if it doesn't, terminate the program
 	if (weather_data.fail())
@@ -109,72 +109,63 @@ int main(int argc, char **argv)
 	
 
 		// Temporary custom vector for initial development of the kernels
-		vector<mytype> A = { 9, 6, -10, 4, 3, 2, 1, 15, 1, -2, 4, 2, 4, 1, 9, 8, -1, 6, -10 };
-		vector<mytype> B = { 9, 6, -10, 4, 3, 2, 1, 15, 1, -2, 4, 2, 4, 1, 9, 8, -1, 6, -10 };
+		//vector<mytype> A = { 9, 6, -10, 4, 3, 2, 1, 15, 1, -2, 4, 2, 4, 1, 9, 8, -1, 6, -10 };
+
 
 		//the following part adjusts the length of the input vector so it can be run for a specific workgroup size
 		//if the total input length is divisible by the workgroup size
 		//this makes the code more efficient
-		size_t local_size = 32;
+		size_t local_size = 16;
 
 		size_t padding_size = A.size() % local_size;
-
+		float pad = 9999999.0f;
 		//if the input vector is not a multiple of the local_size
 		//insert additional neutral elements (0 for addition) so that the total will not be affected
 		if (padding_size) {
 			//create an extra vector with neutral values
-			std::vector<int> A_ext(local_size - padding_size, 0);
+			std::vector<float> A_ext(local_size - padding_size, pad);
 			//append that extra vector to our input
 			A.insert(A.end(), A_ext.begin(), A_ext.end());
 		}
-		size_t input_elements = A.size();//number of input elements
-		size_t input_size = A.size() * sizeof(mytype);//size in bytes
-		size_t nr_groups = input_elements / local_size;
-
-		vector<int> outputList(input_elements);
-
-		// If the input vector is not a multiple of the local_size:
-		// Insert additional neutral elements (0 for addition) so that the total will not be affected
-		if (padding_size) 
-		{
-			//create an extra vector with neutral values
-			vector<int> B_ext(local_size - padding_size, 0);
-			//append that extra vector to our input (apply padding to the original vector)
-			B.insert(B.end(), B_ext.begin(), B_ext.end());
-		}
 
 		//host - output
-		size_t output_size = B.size() * sizeof(mytype); //size in bytes
+		size_t input_elements = A.size();//number of input elements
+		size_t input_size = A.size() * sizeof(float);//size in bytes
+
+		vector<float> B(input_elements);
+
+		size_t output_size = B.size() * sizeof(float); //size in bytes
+		size_t nr_groups = input_elements / local_size;
 
 		//device - buffers
 		cl::Buffer buffer_A(context, CL_MEM_READ_ONLY, input_size);
-		cl::Buffer buffer_B(context, CL_MEM_READ_WRITE, output_size);
+		cl::Buffer buffer_B(context, CL_MEM_WRITE_ONLY, output_size);
 
 		//Part 5 - device operations
-
 		//Copy array A to and initialise other arrays on device memory
 		queue.enqueueWriteBuffer(buffer_A, CL_TRUE, 0, input_size, &A[0]);
 		queue.enqueueFillBuffer(buffer_B, 0, 0, output_size);//zero B buffer on device memory
 
-		cl::Kernel kernel_1 = cl::Kernel(program, "reduce_standard_deviation");
+		cl::Kernel kernel_1 = cl::Kernel(program, "ParallelSelection");
 		kernel_1.setArg(0, buffer_A);
 		kernel_1.setArg(1, buffer_B);
-		kernel_1.setArg(2, cl::Local(local_size * sizeof(mytype))); //local memory size
+		//kernel_1.setArg(2, cl::Local(local_size * sizeof(mytype))); //local memory size
 
-
-		//mean,variance,squareroot
-		//variance = difference squared, then averaged
 		//call all kernels in a sequence
 		queue.enqueueNDRangeKernel(kernel_1, cl::NullRange, cl::NDRange(input_elements), cl::NDRange(local_size));
 
-		//Copy the result from device to host
-		queue.enqueueReadBuffer(buffer_B, CL_TRUE, 0, output_size, &B[0]);
 
-		int temp = B.at(0);
-		int mean = temp / input_elements;
-		int std = sqrt(mean);
-		//std::cout << "A = " << A << std::endl;
-		std::cout << std << std::endl;
+		//Copy the result from device to host
+		queue.enqueueReadBuffer(buffer_B, CL_TRUE, 0, input_size, &B[0]);
+		//B.erase(remove(B.begin(), B.end(), 9999999), A.end());
+		B = quickDelete(B, pad);
+		//int temp = B[0];
+		//int mean = temp / input_elements;
+		//int std = sqrt(mean);
+		std::cout << "A = " << A << std::endl;
+		std::cout << "B = " << B << std::endl;
+		//std::cout << std << std::endl;
+
 
 	}
 	catch (cl::Error err) {
@@ -194,5 +185,16 @@ void print_help() {
 	std::cerr << "  -h : print this message" << std::endl;
 }
 
+vector<float> quickDelete(vector<float>vec, float pad)
+{
+	int vector_elements = vec.size()-1;
+
+	while (vec[vector_elements] == pad)
+	{
+		vector_elements = vector_elements - 1;
+		vec.pop_back();
+	}
+	return vec;
+}
 
 /*end of script*/
