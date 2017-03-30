@@ -7,20 +7,25 @@ void atomicAdd(__global float*, float);
 
 //reduce using local memory + accumulation of local sums into a single location
 //works with any number of groups - not optimal!
-__kernel void reduce_add(__global const float* A, __global float* B, __local float* scratch) {
+__kernel void reduce_add(__global const float* A, __global float* B, __local float* scratch, float pad) {
 	int id = get_global_id(0);
 	int lid = get_local_id(0);
 	int N = get_local_size(0);
 
 	//cache all N values from global memory to local memory
-	scratch[lid] = A[id];
-
+	if (A[id] != pad)
+	{
+		scratch[lid] = A[id];
+	}
 	barrier(CLK_LOCAL_MEM_FENCE);//wait for all local threads to finish copying from global to local memory
 
 	for (int i = 1; i < N; i *= 2) {
 		if (!(lid % (i * 2)) && ((lid + i) < N))
 		{
-			scratch[lid] += scratch[lid + i];
+			if (scratch[lid+1] != pad)
+			{ 
+				scratch[lid] += scratch[lid + i];
+			}
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 	}
@@ -98,28 +103,36 @@ __kernel void reduce_min(__global const int* A, __global int* B, __local int* sc
 }
 
 //reduce using local memory (so called privatisation)
-__kernel void reduce_standard_deviation(__global const int* A, __global int* B, __local int* scratch, int mean) 
+__kernel void reduce_standard_deviation(__global const float* A, __global float* B, __local float* scratch, float mean, float pad_size) 
 {
 	int id = get_global_id(0);
 	int lid = get_local_id(0);
 	int N = get_local_size(0);
-	int var = 0;
-	//cache all N values from global memory to local memory (subtract mean)
-	//scratch[lid] = (A[id] - mean) * (A[id] - mean);
-	scratch[lid] = A[id];
-	barrier(CLK_LOCAL_MEM_FENCE); //wait for all local threads to finish copying from global to local memory
+
+	//cache all N values from global memory to local memory
+
+	//if (lid < (N - pad_size))
+	//{ 
+		scratch[lid] = A[id];
+		scratch[lid] = (scratch[lid] - mean) * (scratch[lid] - mean);
+	//}
+	barrier(CLK_LOCAL_MEM_FENCE);//wait for all local threads to finish copying from global to local memory
+
 
 	for (int i = 1; i < N; i *= 2)
 	{
 		if (!(lid % (i * 2)) && ((lid + i) < N))
 		{
-			scratch[lid] = scratch[lid + i];
+
+			scratch[lid] += scratch[lid + 1];
+
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 	}
 	//we add results from all local groups to the first element of the array
 	//serial operation! but works for any group size
 	//copy the cache to output array	
+
 	if (!lid)
 	{
 		atomicAdd(&B[0], scratch[lid]);
@@ -127,7 +140,7 @@ __kernel void reduce_standard_deviation(__global const int* A, __global int* B, 
 }
 
 // Selection Sort
-__kernel void ParallelSelection(__global const float* A, __global float* B)
+__kernel void parallel_selection_sort(__global const float* A, __global float* B)
 {
 	int i = get_global_id(0); // current thread
 	int n = get_global_size(0); // input size
@@ -138,7 +151,7 @@ __kernel void ParallelSelection(__global const float* A, __global float* B)
 	for (int j = 0; j < n; j++)
 	{
 		float newData = A[j]; // broadcasted
-		bool smaller = (newData < currentData) || (newData == currentData && j < i);  // in[j] < in[i] ?
+		bool smaller = (newData < currentData) || (newData == currentData && j < i);  
 		pos += (smaller) ? 1 : 0;
 	}
 	B[pos] = currentData;

@@ -15,8 +15,7 @@
 using namespace std;
 
 void print_help();
-vector<float> quickDelete(vector<float>, float );
-
+vector<float> quickDelete(vector<float>, float);
 
 int main(int argc, char **argv)
 {
@@ -28,7 +27,7 @@ int main(int argc, char **argv)
 	////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	ifstream weather_data;
-	weather_data.open("temp_lincolnshire.txt");
+	weather_data.open("temp_lincolnshire_short.txt");
 	string stationName, line;
 	int year, month, day, time;
 	float airTemp;
@@ -44,10 +43,12 @@ int main(int argc, char **argv)
 	// Check if the file exists, if it doesn't, terminate the program
 	if (weather_data.fail())
 	{
-		cout << "Cannot load file..." << endl;
+		cout << "Cannot load text file..." << endl;
 		getchar();
 		return 1;
 	}
+
+	cout << "Loading data from the text file..." << endl;
 
 	// If the file exists, load the data into each of the respective vectors
 	while (!weather_data.eof())
@@ -63,6 +64,8 @@ int main(int argc, char **argv)
 		timeVector.push_back(time);
 		A.push_back(airTemp);
 	}
+
+	cout << "Data was successfully loaded from the text file!" << endl;
 
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////
 	////////////////////////////////// User Interface for Device Selection //////////////////////////////////
@@ -83,10 +86,15 @@ int main(int argc, char **argv)
 		cout << "Device Selected: " << GetPlatformName(platform_id) << ", " << GetDeviceName(platform_id, device_id) << endl; 
 
 		// Queue variable which will be used to push commands to the device
-		cl::CommandQueue queue(context); 
+		cl::CommandQueue queue(context, CL_QUEUE_PROFILING_ENABLE);
+
 
 		// Load and build the device code
 		cl::Program::Sources sources; 
+
+		cl::Event prof_event;
+
+
 		AddSources(sources, "my_kernels.cl");
 		cl::Program program(context, sources);
 
@@ -103,70 +111,185 @@ int main(int argc, char **argv)
 			throw err;
 		}
 
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////
-	///////////////////////////////////////////// Output Results ////////////////////////////////////////////
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////
-	
+		/////////////////////////////////////////////////////////////////////////////////////////////////////////
+		//////////////////////////////////// Parallel Statistical Operations ////////////////////////////////////
+		/////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-		// Temporary custom vector for initial development of the kernels
-		//vector<mytype> A = { 9, 6, -10, 4, 3, 2, 1, 15, 1, -2, 4, 2, 4, 1, 9, 8, -1, 6, -10 };
+		// Initialise variables
+		vector<float> sorted_temp(A.size());
+		size_t vector_elements = sorted_temp.size();
+		float mean = 0.f;
+		float _min = 0.f;
+		float _max = 0.f;
+		float median = 0.f;
+		float firstQuart = 0.f;
+		float thirdQuart = 0.f;
+		float stdDev = 0.f;
+			
+		// Second vector used for the output of the kernels
+		vector<float> B(A.size());
 
-
-		//the following part adjusts the length of the input vector so it can be run for a specific workgroup size
-		//if the total input length is divisible by the workgroup size
-		//this makes the code more efficient
+		// Define the size of the workgroups in which the data will be sent to on the device
 		size_t local_size = 16;
 
-		size_t padding_size = A.size() % local_size;
-		float pad = 9999999.0f;
-		//if the input vector is not a multiple of the local_size
-		//insert additional neutral elements (0 for addition) so that the total will not be affected
-		if (padding_size) {
-			//create an extra vector with neutral values
+		// Pad the vector with a neutral value, in this case a very high temperature value
+		float pad = 300.f;
+
+		// Pad the vector and ensure that the vector size is divisible by the workgroup size
+		float padding_size = A.size() % local_size;
+		
+		// If the input vector is not currently divisible by the workgroup size:
+		// Insert additional neutral elements to the input vector
+		if (padding_size)
+		{
+			// Create an extra temporary vector which stores the required amount of neutral elements
 			std::vector<float> A_ext(local_size - padding_size, pad);
-			//append that extra vector to our input
+			
+			// Append this extra temporary vector to the end of the input vector
 			A.insert(A.end(), A_ext.begin(), A_ext.end());
 		}
 
-		//host - output
-		size_t input_elements = A.size();//number of input elements
-		size_t input_size = A.size() * sizeof(float);//size in bytes
+		// Total elements within the input vector
+		size_t input_elements = A.size();
 
-		vector<float> B(input_elements);
+		// Total size of the input vector, in bytes
+		size_t input_size = A.size() * sizeof(float);
 
-		size_t output_size = B.size() * sizeof(float); //size in bytes
+		// Total size of the output vector, in bytes
+		size_t output_size = B.size() * sizeof(float); 
+
+		// Calculate the total number of workgroups that will be used on the device
 		size_t nr_groups = input_elements / local_size;
 
-		//device - buffers
+		// Establish a buffer which will be used for the input vector, ensure read-only to avoid kernels overwriting the original input vector unnecessarily
 		cl::Buffer buffer_A(context, CL_MEM_READ_ONLY, input_size);
+
+		// Establish a buffer which will be used for the output vector, ensure write-only to avoid kernels unnecessarily interpreting it as the input vector
 		cl::Buffer buffer_B(context, CL_MEM_WRITE_ONLY, output_size);
 
-		//Part 5 - device operations
-		//Copy array A to and initialise other arrays on device memory
+		// Copy the input vector to the device memory
 		queue.enqueueWriteBuffer(buffer_A, CL_TRUE, 0, input_size, &A[0]);
+
+		// Initialise output vector on the device memory (zero buffer)
 		queue.enqueueFillBuffer(buffer_B, 0, 0, output_size);//zero B buffer on device memory
 
-		cl::Kernel kernel_1 = cl::Kernel(program, "ParallelSelection");
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////// PARALLEL ADDITION KERNEL /////////////////////////////////////////////////////////////
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+		// Kernel responsible for the parallel addition involved when calculating the average of the weather dataset
+		cl::Kernel kernel_1 = cl::Kernel(program, "reduce_add");
 		kernel_1.setArg(0, buffer_A);
 		kernel_1.setArg(1, buffer_B);
-		//kernel_1.setArg(2, cl::Local(local_size * sizeof(mytype))); //local memory size
+		kernel_1.setArg(2, cl::Local(local_size * sizeof(float))); // local memory size
+		kernel_1.setArg(3, pad); // padding size
 
-		//call all kernels in a sequence
-		queue.enqueueNDRangeKernel(kernel_1, cl::NullRange, cl::NDRange(input_elements), cl::NDRange(local_size));
+		// Call all kernels in a sequence
+		queue.enqueueNDRangeKernel(kernel_1, cl::NullRange, cl::NDRange(input_elements), cl::NDRange(local_size), NULL, &prof_event);
+
+		// Copy the calculated result from the device back to the host (store the result in the output vector in host)
+		queue.enqueueReadBuffer(buffer_B, CL_TRUE, 0, output_size, &B[0]);
+
+		// Store execution time of kernel
+		long reduce_add_ns = prof_event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - prof_event.getProfilingInfo<CL_PROFILING_COMMAND_START>();
+		string reduce_add_full = GetFullProfilingInfo(prof_event, ProfilingResolution::PROF_US);
+
+		// Copy calculated sum into a new float variable
+		float total = B[0];
+
+		// Divide the sum by the total elements in serial to calculate the average
+		mean = total / input_elements;
+
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		///////////////////////////////////////////////// PARALLEL STANDARD DEVIATION KERNEL /////////////////////////////////////////////////////////
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+		// Re-use previous kernel
+		// Kernel responsible for the parallel standard deviation calculation
+		kernel_1 = cl::Kernel(program, "reduce_standard_deviation");
+		kernel_1.setArg(0, buffer_A);
+		kernel_1.setArg(1, buffer_B);
+		kernel_1.setArg(2, cl::Local(local_size * sizeof(float))); // local memory size
+		kernel_1.setArg(3, mean); // pass previously calculated mean as an argument
+		kernel_1.setArg(4, padding_size); // padding size
+
+		// Call all kernels in a sequence
+		queue.enqueueNDRangeKernel(kernel_1, cl::NullRange, cl::NDRange(input_elements), cl::NDRange(local_size),NULL,&prof_event);
+
+		// Copy the calculated result from the device back to the host (store the result in the output vector in host)
+		queue.enqueueReadBuffer(buffer_B, CL_TRUE, 0, output_size, &B[0]);
+
+		// Store execution time of kernel
+		long reduce_standard_deviation_ns = prof_event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - prof_event.getProfilingInfo<CL_PROFILING_COMMAND_START>();
+		string reduce_standard_deviation_full = GetFullProfilingInfo(prof_event, ProfilingResolution::PROF_US);
+
+		// Collect sum of the squared differences
+		float squaredDifference = B[0];
+
+		// Square-root the average of the square differences in serial
+		stdDev = sqrt(squaredDifference / input_elements);
+
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////// PARALLEL SORT KERNEL /////////////////////////////////////////////////////////////////
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		
+		// (Re-use previous kernel)
+		// Kernel responsible for the sorting required for the median, LQ, UQ, min and max
+		kernel_1 = cl::Kernel(program, "parallel_selection_sort");
+		kernel_1.setArg(0, buffer_A);
+		kernel_1.setArg(1, buffer_B);
+
+		// Call all kernels in a sequence
+		queue.enqueueNDRangeKernel(kernel_1, cl::NullRange, cl::NDRange(input_elements), cl::NDRange(local_size), NULL, &prof_event);
+		
+		// Copy the calculated result from the device back to the host (store the result in the output vector in host)
+		queue.enqueueReadBuffer(buffer_B, CL_TRUE, 0, output_size, &B[0]);
+
+		// Store execution time of kernel
+		long sort_ns = prof_event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - prof_event.getProfilingInfo<CL_PROFILING_COMMAND_START>();
+		string sort_full = GetFullProfilingInfo(prof_event, ProfilingResolution::PROF_US);
+
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////////// OUTPUT RESULTS ///////////////////////////////////////////////////////////////////
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+		long totalElapsed = 0;
+		totalElapsed = reduce_add_ns + reduce_standard_deviation_ns + sort_ns;
 
 
-		//Copy the result from device to host
-		queue.enqueueReadBuffer(buffer_B, CL_TRUE, 0, input_size, &B[0]);
-		//B.erase(remove(B.begin(), B.end(), 9999999), A.end());
-		B = quickDelete(B, pad);
-		//int temp = B[0];
-		//int mean = temp / input_elements;
-		//int std = sqrt(mean);
-		std::cout << "A = " << A << std::endl;
-		std::cout << "B = " << B << std::endl;
-		//std::cout << std << std::endl;
+		cout << endl;
+		cout << "---------------------------------- Performance Results ---------------------------------" << endl;
+		cout << "Addition by reduction kernel: " << reduce_add_ns << " [ns]" << endl;
+		cout << reduce_add_full << endl;
+		cout << endl;
+		cout << "Standard Deviation by a reduction kernel: " << reduce_standard_deviation_ns << " [ns]" << endl;
+		cout << reduce_standard_deviation_full << endl;
+		cout << endl;
+		cout << "Parallel selection sort: " << sort_ns << " [ns]" << endl;
+		cout << sort_full << endl;
+		cout << endl;
+		cout << "Total kernel execution time: " << totalElapsed << " [ns]" << endl;
+		cout << "----------------------- Statistical Analysis Calculation Results -----------------------" << endl;
 
+		sorted_temp = B;
+		_min = sorted_temp[0];
+		_max = sorted_temp[vector_elements - 1];
+		median = sorted_temp[vector_elements / 2 - 1];
+		firstQuart = sorted_temp[(vector_elements / 4) - 1];
+		thirdQuart = sorted_temp[(vector_elements / 2) + (vector_elements / 4)];
 
+		cout << "Mean: " << mean << endl;
+		cout << "Standard Deviation: " << stdDev << endl;
+		cout << "Min: " << _min << endl;
+		cout << "Max: " << _max << endl;
+		cout << "Median: " << median << endl;
+		cout << "First Quartile: " << firstQuart << endl;
+		cout << "Third Quartile: " << thirdQuart << endl;
+
+		cout << endl;
+		cout << "Please enter any key to exit... " << endl;
+
+		/*Output finishes here*/
 	}
 	catch (cl::Error err) {
 		std::cerr << "ERROR: " << err.what() << ", " << getErrorString(err.err()) << std::endl;
@@ -185,6 +308,7 @@ void print_help() {
 	std::cerr << "  -h : print this message" << std::endl;
 }
 
+// Function responsible for removing any padded values that have been inserted into the vectors
 vector<float> quickDelete(vector<float>vec, float pad)
 {
 	int vector_elements = vec.size()-1;
