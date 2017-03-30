@@ -27,7 +27,7 @@ int main(int argc, char **argv)
 	////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	ifstream weather_data;
-	weather_data.open("temp_lincolnshire_short.txt");
+	weather_data.open("temp_lincolnshire.txt");
 	string stationName, line;
 	int year, month, day, time;
 	float airTemp;
@@ -125,7 +125,11 @@ int main(int argc, char **argv)
 		float firstQuart = 0.f;
 		float thirdQuart = 0.f;
 		float stdDev = 0.f;
-			
+		long mex1 = 0;
+		long mex2 = 0;
+
+		cl::Event mem_prof_event_1;
+
 		// Second vector used for the output of the kernels
 		vector<float> B(A.size());
 
@@ -133,7 +137,7 @@ int main(int argc, char **argv)
 		size_t local_size = 16;
 
 		// Pad the vector with a neutral value, in this case a very high temperature value
-		float pad = 300.f;
+		float pad = 300000.f;
 
 		// Pad the vector and ensure that the vector size is divisible by the workgroup size
 		float padding_size = A.size() % local_size;
@@ -167,15 +171,15 @@ int main(int argc, char **argv)
 		// Establish a buffer which will be used for the output vector, ensure write-only to avoid kernels unnecessarily interpreting it as the input vector
 		cl::Buffer buffer_B(context, CL_MEM_WRITE_ONLY, output_size);
 
-		// Copy the input vector to the device memory
-		queue.enqueueWriteBuffer(buffer_A, CL_TRUE, 0, input_size, &A[0]);
-
-		// Initialise output vector on the device memory (zero buffer)
-		queue.enqueueFillBuffer(buffer_B, 0, 0, output_size);//zero B buffer on device memory
-
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		/////////////////////////////////////////////////////// PARALLEL ADDITION KERNEL /////////////////////////////////////////////////////////////
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+		// Copy the input vector to the device memory
+		queue.enqueueWriteBuffer(buffer_A, CL_TRUE, 0, input_size, &A[0], NULL, &mem_prof_event_1);
+
+		// Initialise output vector on the device memory (zero buffer)
+		queue.enqueueFillBuffer(buffer_B, 0, 0, output_size);//zero B buffer on device memory
 
 		// Kernel responsible for the parallel addition involved when calculating the average of the weather dataset
 		cl::Kernel kernel_1 = cl::Kernel(program, "reduce_add");
@@ -184,14 +188,23 @@ int main(int argc, char **argv)
 		kernel_1.setArg(2, cl::Local(local_size * sizeof(float))); // local memory size
 		kernel_1.setArg(3, pad); // padding size
 
+		cl::Event mem_prof_event_2;
+
 		// Call all kernels in a sequence
 		queue.enqueueNDRangeKernel(kernel_1, cl::NullRange, cl::NDRange(input_elements), cl::NDRange(local_size), NULL, &prof_event);
 
 		// Copy the calculated result from the device back to the host (store the result in the output vector in host)
-		queue.enqueueReadBuffer(buffer_B, CL_TRUE, 0, output_size, &B[0]);
+		queue.enqueueReadBuffer(buffer_B, CL_TRUE, 0, output_size, &B[0], NULL, &mem_prof_event_2);
 
 		// Store execution time of kernel
 		long reduce_add_ns = prof_event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - prof_event.getProfilingInfo<CL_PROFILING_COMMAND_START>();
+
+		// Store memory transfer time
+		mex1 = mem_prof_event_1.getProfilingInfo<CL_PROFILING_COMMAND_END>() - mem_prof_event_1.getProfilingInfo<CL_PROFILING_COMMAND_START>();
+		mex2 = mem_prof_event_2.getProfilingInfo<CL_PROFILING_COMMAND_END>() - mem_prof_event_2.getProfilingInfo<CL_PROFILING_COMMAND_START>();
+		long reduce_add_mem = mex2 + mex1;
+		long reduce_add_op = reduce_add_mem + reduce_add_ns;
+
 		string reduce_add_full = GetFullProfilingInfo(prof_event, ProfilingResolution::PROF_US);
 
 		// Copy calculated sum into a new float variable
@@ -204,6 +217,12 @@ int main(int argc, char **argv)
 		///////////////////////////////////////////////// PARALLEL STANDARD DEVIATION KERNEL /////////////////////////////////////////////////////////
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+		// Copy the input vector to the device memory
+		queue.enqueueWriteBuffer(buffer_A, CL_TRUE, 0, input_size, &A[0], NULL, &mem_prof_event_1);
+
+		// Initialise output vector on the device memory (zero buffer)
+		queue.enqueueFillBuffer(buffer_B, 0, 0, output_size);//zero B buffer on device memory
+
 		// Re-use previous kernel
 		// Kernel responsible for the parallel standard deviation calculation
 		kernel_1 = cl::Kernel(program, "reduce_standard_deviation");
@@ -211,28 +230,42 @@ int main(int argc, char **argv)
 		kernel_1.setArg(1, buffer_B);
 		kernel_1.setArg(2, cl::Local(local_size * sizeof(float))); // local memory size
 		kernel_1.setArg(3, mean); // pass previously calculated mean as an argument
-		kernel_1.setArg(4, padding_size); // padding size
+		kernel_1.setArg(4, pad); // padding size
 
 		// Call all kernels in a sequence
 		queue.enqueueNDRangeKernel(kernel_1, cl::NullRange, cl::NDRange(input_elements), cl::NDRange(local_size),NULL,&prof_event);
 
 		// Copy the calculated result from the device back to the host (store the result in the output vector in host)
-		queue.enqueueReadBuffer(buffer_B, CL_TRUE, 0, output_size, &B[0]);
+		queue.enqueueReadBuffer(buffer_B, CL_TRUE, 0, output_size, &B[0], NULL, &mem_prof_event_2);
 
 		// Store execution time of kernel
 		long reduce_standard_deviation_ns = prof_event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - prof_event.getProfilingInfo<CL_PROFILING_COMMAND_START>();
+
+		// Store memory transfer time
+		mex1 = mem_prof_event_1.getProfilingInfo<CL_PROFILING_COMMAND_END>() - mem_prof_event_1.getProfilingInfo<CL_PROFILING_COMMAND_START>();
+		mex2 = mem_prof_event_2.getProfilingInfo<CL_PROFILING_COMMAND_END>() - mem_prof_event_2.getProfilingInfo<CL_PROFILING_COMMAND_START>();
+		long reduce_standard_deviation_mem = mex2 + mex1;
+		long reduce_standard_deviation_op = reduce_standard_deviation_mem + reduce_standard_deviation_ns;
+
 		string reduce_standard_deviation_full = GetFullProfilingInfo(prof_event, ProfilingResolution::PROF_US);
 
 		// Collect sum of the squared differences
-		float squaredDifference = B[0];
+		float sumsquaredDifference = B[0];
+		float variance = sumsquaredDifference / input_elements;
 
 		// Square-root the average of the square differences in serial
-		stdDev = sqrt(squaredDifference / input_elements);
+		stdDev = sqrt(variance);
 
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		/////////////////////////////////////////////////////// PARALLEL SORT KERNEL /////////////////////////////////////////////////////////////////
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		
+
+		// Copy the input vector to the device memory
+		queue.enqueueWriteBuffer(buffer_A, CL_TRUE, 0, input_size, &A[0], NULL, &mem_prof_event_1);
+
+		// Initialise output vector on the device memory (zero buffer)
+		queue.enqueueFillBuffer(buffer_B, 0, 0, output_size);//zero B buffer on device memory
+
 		// (Re-use previous kernel)
 		// Kernel responsible for the sorting required for the median, LQ, UQ, min and max
 		kernel_1 = cl::Kernel(program, "parallel_selection_sort");
@@ -243,10 +276,17 @@ int main(int argc, char **argv)
 		queue.enqueueNDRangeKernel(kernel_1, cl::NullRange, cl::NDRange(input_elements), cl::NDRange(local_size), NULL, &prof_event);
 		
 		// Copy the calculated result from the device back to the host (store the result in the output vector in host)
-		queue.enqueueReadBuffer(buffer_B, CL_TRUE, 0, output_size, &B[0]);
+		queue.enqueueReadBuffer(buffer_B, CL_TRUE, 0, output_size, &B[0], NULL, &mem_prof_event_2);
 
 		// Store execution time of kernel
 		long sort_ns = prof_event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - prof_event.getProfilingInfo<CL_PROFILING_COMMAND_START>();
+
+		// Store memory transfer time
+		mex1 = mem_prof_event_1.getProfilingInfo<CL_PROFILING_COMMAND_END>() - mem_prof_event_1.getProfilingInfo<CL_PROFILING_COMMAND_START>();
+		mex2 = mem_prof_event_2.getProfilingInfo<CL_PROFILING_COMMAND_END>() - mem_prof_event_2.getProfilingInfo<CL_PROFILING_COMMAND_START>();
+		long sort_mem = mex2 + mex1;
+		long sort_op = sort_mem + sort_ns;
+
 		string sort_full = GetFullProfilingInfo(prof_event, ProfilingResolution::PROF_US);
 
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -254,21 +294,31 @@ int main(int argc, char **argv)
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 		long totalElapsed = 0;
-		totalElapsed = reduce_add_ns + reduce_standard_deviation_ns + sort_ns;
-
+		totalElapsed = reduce_add_op + reduce_standard_deviation_op + sort_op;
 
 		cout << endl;
 		cout << "---------------------------------- Performance Results ---------------------------------" << endl;
-		cout << "Addition by reduction kernel: " << reduce_add_ns << " [ns]" << endl;
-		cout << reduce_add_full << endl;
+		cout << "Addition by reduction kernel: " << endl;
+		cout << "\tKernel execution time: " << reduce_add_ns << " [ns]" << endl;
+		cout << "\tMemory transfer: " << reduce_add_mem << " [ns]" << endl;
+		cout << "\tOperation time: " << reduce_add_op << " [ns]" << endl;
+		cout << "\t" << reduce_add_full << endl;
 		cout << endl;
-		cout << "Standard Deviation by a reduction kernel: " << reduce_standard_deviation_ns << " [ns]" << endl;
-		cout << reduce_standard_deviation_full << endl;
+		cout << "Standard Deviation by a reduction kernel: " << endl;
+		cout << "\tKernel execution time: " << reduce_standard_deviation_ns << " [ns]" << endl;
+		cout << "\tMemory transfer: " << reduce_standard_deviation_mem << " [ns]" << endl;
+		cout << "\tOperation time: " << reduce_standard_deviation_op << " [ns]" << endl;
+		cout << "\t" << reduce_standard_deviation_full << endl;
+
 		cout << endl;
-		cout << "Parallel selection sort: " << sort_ns << " [ns]" << endl;
-		cout << sort_full << endl;
+		cout << "Parallel selection sort: " << endl;
+		cout << "\tKernel execution time: " << sort_ns << " [ns]" << endl;
+		cout << "\tMemory transfer: " << sort_mem << " [ns]" << endl;
+		cout << "\tOperation time: " << sort_op << " [ns]" << endl;
+		cout << "\t" << sort_full << endl;
+
 		cout << endl;
-		cout << "Total kernel execution time: " << totalElapsed << " [ns]" << endl;
+		cout << "Total program execution time: " << totalElapsed << " [ns]" << endl;
 		cout << "----------------------- Statistical Analysis Calculation Results -----------------------" << endl;
 
 		sorted_temp = B;
@@ -287,7 +337,7 @@ int main(int argc, char **argv)
 		cout << "Third Quartile: " << thirdQuart << endl;
 
 		cout << endl;
-		cout << "Please enter any key to exit... " << endl;
+		cout << "Please enter any key to exit... ";
 
 		/*Output finishes here*/
 	}
