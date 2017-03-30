@@ -1,0 +1,20 @@
+﻿  Source.cpp
+Source.cpp(153): warning C4244: 'initializing': conversion from 'unsigned __int64' to 'float', possible loss of data
+Source.cpp(160): warning C4244: 'argument': conversion from 'float' to 'unsigned __int64', possible loss of data
+Source.cpp(209): warning C4244: 'initializing': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(212): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(213): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(252): warning C4244: 'initializing': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(255): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(256): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(293): warning C4244: 'initializing': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(296): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(297): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(375): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+  Generating code
+  All 864 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  Finished generating code
+  Tutorial 1.vcxproj -> E:\Year 3\Parallel Computing\ParallelComputingAssignment\CMP3110M-AssessmentItem1-12421031-PeterHart\x64\Release\ParallelComputingAssignment.exe
+  Tutorial 1.vcxproj -> E:\Year 3\Parallel Computing\ParallelComputingAssignment\CMP3110M-AssessmentItem1-12421031-PeterHart\x64\Release\ParallelComputingAssignment.pdb (Full PDB)
+  my_kernels.cl
+          1 file(s) copied.

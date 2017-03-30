@@ -1,17 +1,17 @@
 ﻿C:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V140\Microsoft.CppBuild.targets(392,5): warning MSB8028: The intermediate directory (x64\Debug\) contains files shared from another project (Tutorial 1.vcxproj).  This can lead to incorrect clean and rebuild behavior.
   Source.cpp
-Source.cpp(143): warning C4244: 'initializing': conversion from 'unsigned __int64' to 'float', possible loss of data
-Source.cpp(150): warning C4244: 'argument': conversion from 'float' to 'unsigned __int64', possible loss of data
-Source.cpp(200): warning C4244: 'initializing': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'long', possible loss of data
-Source.cpp(203): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'long', possible loss of data
-Source.cpp(204): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'long', possible loss of data
-Source.cpp(242): warning C4244: 'initializing': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'long', possible loss of data
-Source.cpp(245): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'long', possible loss of data
-Source.cpp(246): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'long', possible loss of data
-Source.cpp(282): warning C4244: 'initializing': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'long', possible loss of data
-Source.cpp(285): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'long', possible loss of data
-Source.cpp(286): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'long', possible loss of data
-Source.cpp(364): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+Source.cpp(147): warning C4244: 'initializing': conversion from 'unsigned __int64' to 'float', possible loss of data
+Source.cpp(154): warning C4244: 'argument': conversion from 'float' to 'unsigned __int64', possible loss of data
+Source.cpp(203): warning C4244: 'initializing': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(206): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(207): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(245): warning C4244: 'initializing': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(248): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(249): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(285): warning C4244: 'initializing': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(288): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(289): warning C4244: '=': conversion from 'cl::detail::param_traits<cl::detail::cl_profiling_info,4739>::param_type' to 'unsigned long', possible loss of data
+Source.cpp(367): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
   Tutorial 1.vcxproj -> E:\Year 3\Parallel Computing\ParallelComputingAssignment\CMP3110M-AssessmentItem1-12421031-PeterHart\x64\Debug\ParallelComputingAssignment.exe
   Tutorial 1.vcxproj -> E:\Year 3\Parallel Computing\ParallelComputingAssignment\CMP3110M-AssessmentItem1-12421031-PeterHart\x64\Debug\ParallelComputingAssignment.pdb (Full PDB)
   my_kernels.cl
